@@ -22,15 +22,44 @@ It is a plain shell command, so it drops into **Codex**, **Claude Code**, **Curs
 
 ## Quick start
 
-Requires Node 22+. Uses [ripgrep](https://github.com/BurntSushi/ripgrep) when it is on `PATH`.
+Requires Git, Node 22+ (with npm), and a Drex API key. Uses [ripgrep](https://github.com/BurntSushi/ripgrep) when it is on `PATH`.
+
+Clone and install the CLI:
 
 ```bash
+git clone https://github.com/nace-ai/drexgrep.git
+cd drexgrep
 npm ci && npm run build
 npm link                      # puts `dg` and `drexgrep` on PATH
-export DREX_API_KEY=...
-
-dg "floatformat drops precision for Decimal values" ~/src/django
 ```
+
+[Sign in to Drex](https://drex.nace.ai/) and create an API key in the dashboard. New accounts are created automatically when you sign in. Set the key in your shell:
+
+```bash
+export DREX_API_KEY="your-api-key"
+```
+
+Try a search over the checkout you just cloned:
+
+```bash
+dg "Where can I change the error for a missing DREX_API_KEY?" .
+```
+
+Example output (excerpt showing the first result; scores and ordering can vary between runs):
+
+```text
+## src/cli/main.ts  rank=0.7499971249313886  via=grep
+quote 32-36
+function requireApiKey(): void {
+  if (!process.env.DREX_API_KEY) {
+    throw new Error("Set DREX_API_KEY.");
+  }
+}
+```
+
+The first match points to the CLI's API-key check and quotes its error message, with the file and line numbers. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
+
+Searches require internet access and send your question, file paths, and selected repository content to the hosted Drex API. API usage draws from your account's prepaid credit; see [current pricing and credit terms](https://drex.nace.ai/terms) and the [privacy notice](https://drex.nace.ai/privacy).
 
 ## Usage
 
