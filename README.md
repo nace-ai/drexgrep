@@ -42,26 +42,25 @@ export DREX_API_KEY="your-api-key"
 Try a search over the checkout you just cloned:
 
 ```bash
-dg "Where should I change retryAfterMs to cap Retry-After delays at 30 seconds?" .
+dg "Search results are full of test files. Where should I change the ranking to prefer implementation code?" .
 ```
 
-Example output (excerpt; scores and ordering can vary between runs):
+One result from this search (excerpt; `...` marks omitted lines, and scores and ordering can vary between runs):
 
 ```text
-## src/drex/client.ts  rank=0.9441274180000001  via=grep
-quote 95-103
-function retryAfterMs(response: Response): number {
-  const header = response.headers.get("retry-after");
-  if (!header) return COOLDOWN_DEFAULT_MS;
-  const asNumber = Number(header);
-  if (Number.isFinite(asNumber) && asNumber >= 0) return Math.ceil(asNumber * 1000);
-  const when = Date.parse(header);
-  if (!Number.isNaN(when)) return Math.max(0, when - Date.now());
-  return COOLDOWN_DEFAULT_MS;
-}
+## src/code/score.ts  rank=0.56970625  via=link
+quote 57-123
+...
+    const kind = kindOf(doc);
+    const weight = kindWeight(kind);
+...
+    rows.push({
+      rel: hit.rel,
+      heuristic: raw * weight,
+...
 ```
 
-The result points to the function to edit, with its file path and line numbers. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
+The result follows code links into the scoring function, where file-kind weights affect ranking. You can start with a behavior you want to change without knowing its function name. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
 
 Searches require internet access and send your question, file paths, and selected repository content to the hosted Drex API. API usage draws from your account's prepaid credit; see [current pricing and credit terms](https://drex.nace.ai/terms) and the [privacy notice](https://drex.nace.ai/privacy).
 
