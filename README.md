@@ -42,12 +42,14 @@ export DREX_API_KEY="your-api-key"
 Try a search over the checkout you just cloned:
 
 ```bash
-dg "Where does retryAfterMs parse the Retry-After header?" .
+dg "Where should I change retryAfterMs to cap Retry-After delays at 30 seconds?" .
 ```
 
-For this query, the relevant implementation is in `src/drex/client.ts`:
+Example output (excerpt; scores and ordering can vary between runs):
 
-```ts
+```text
+## src/drex/client.ts  rank=0.9441274180000001  via=grep
+quote 95-103
 function retryAfterMs(response: Response): number {
   const header = response.headers.get("retry-after");
   if (!header) return COOLDOWN_DEFAULT_MS;
@@ -59,7 +61,7 @@ function retryAfterMs(response: Response): number {
 }
 ```
 
-Results include the relative file path and quoted source lines; scores and ordering can vary between runs. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
+The result points to the function to edit, with its file path and line numbers. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
 
 Searches require internet access and send your question, file paths, and selected repository content to the hosted Drex API. API usage draws from your account's prepaid credit; see [current pricing and credit terms](https://drex.nace.ai/terms) and the [privacy notice](https://drex.nace.ai/privacy).
 
