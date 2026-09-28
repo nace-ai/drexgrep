@@ -22,15 +22,46 @@ It is a plain shell command, so it drops into **Codex**, **Claude Code**, **Curs
 
 ## Quick start
 
-Requires Node 22+. Uses [ripgrep](https://github.com/BurntSushi/ripgrep) when it is on `PATH`.
+Requires Git, Node 22+ (with npm), and a Drex API key. Uses [ripgrep](https://github.com/BurntSushi/ripgrep) when it is on `PATH`.
+
+Clone and install the CLI:
 
 ```bash
+git clone https://github.com/nace-ai/drexgrep.git
+cd drexgrep
 npm ci && npm run build
 npm link                      # puts `dg` and `drexgrep` on PATH
-export DREX_API_KEY=...
-
-dg "floatformat drops precision for Decimal values" ~/src/django
 ```
+
+[Sign in to Drex](https://drex.nace.ai/) and create an API key in the dashboard. New accounts are created automatically when you sign in. Set the key in your shell:
+
+```bash
+export DREX_API_KEY="your-api-key"
+```
+
+Try a search over the checkout you just cloned:
+
+```bash
+dg "Where does retryAfterMs parse the Retry-After header?" .
+```
+
+For this query, the relevant implementation is in `src/drex/client.ts`:
+
+```ts
+function retryAfterMs(response: Response): number {
+  const header = response.headers.get("retry-after");
+  if (!header) return COOLDOWN_DEFAULT_MS;
+  const asNumber = Number(header);
+  if (Number.isFinite(asNumber) && asNumber >= 0) return Math.ceil(asNumber * 1000);
+  const when = Date.parse(header);
+  if (!Number.isNaN(when)) return Math.max(0, when - Date.now());
+  return COOLDOWN_DEFAULT_MS;
+}
+```
+
+Results include the relative file path and quoted source lines; scores and ordering can vary between runs. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
+
+Searches require internet access and send your question, file paths, and selected repository content to the hosted Drex API. API usage draws from your account's prepaid credit; see [current pricing and credit terms](https://drex.nace.ai/terms) and the [privacy notice](https://drex.nace.ai/privacy).
 
 ## Usage
 
