@@ -42,25 +42,18 @@ export DREX_API_KEY="your-api-key"
 Try a search over the checkout you just cloned:
 
 ```bash
-dg "Search results are full of test files. Where should I change the ranking to prefer implementation code?" .
+dg "How can I make source files rank higher than documentation in search results?" .
 ```
 
-One result from this search (excerpt; `...` marks omitted lines, and scores and ordering can vary between runs):
+Example output (excerpt showing the first two results; scores and ordering can vary between runs):
 
 ```text
-## src/code/score.ts  rank=0.56970625  via=link
-quote 57-123
-...
-    const kind = kindOf(doc);
-    const weight = kindWeight(kind);
-...
-    rows.push({
-      rel: hit.rel,
-      heuristic: raw * weight,
-...
+## src/code/kind.ts  rank=0.29027205866666667  via=grep
+
+## src/code/score.ts  rank=0.2633985105833333  via=grep
 ```
 
-The result follows code links into the scoring function, where file-kind weights affect ranking. You can start with a behavior you want to change without knowing its function name. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
+The first two matches point to file-kind weights and the scoring code that applies them. You can start with a behavior you want to change without knowing its function name. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
 
 Searches require internet access and send your question, file paths, and selected repository content to the hosted Drex API. API usage draws from your account's prepaid credit; see [current pricing and credit terms](https://drex.nace.ai/terms) and the [privacy notice](https://drex.nace.ai/privacy).
 
