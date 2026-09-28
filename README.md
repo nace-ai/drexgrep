@@ -42,18 +42,22 @@ export DREX_API_KEY="your-api-key"
 Try a search over the checkout you just cloned:
 
 ```bash
-dg "How can I make source files rank higher than documentation in search results?" .
+dg "Where can I change the error for a missing DREX_API_KEY?" .
 ```
 
-Example output (excerpt showing the first two results; scores and ordering can vary between runs):
+Example output (excerpt showing the first result; scores and ordering can vary between runs):
 
 ```text
-## src/code/kind.ts  rank=0.29027205866666667  via=grep
-
-## src/code/score.ts  rank=0.2633985105833333  via=grep
+## src/cli/main.ts  rank=0.7499971249313886  via=grep
+quote 32-36
+function requireApiKey(): void {
+  if (!process.env.DREX_API_KEY) {
+    throw new Error("Set DREX_API_KEY.");
+  }
+}
 ```
 
-The first two matches point to file-kind weights and the scoring code that applies them. You can start with a behavior you want to change without knowing its function name. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
+The first match points to the CLI's API-key check and quotes its error message, with the file and line numbers. Pass another repository's path instead of `.` to search it, or add `--json` for the [machine-readable report](#output).
 
 Searches require internet access and send your question, file paths, and selected repository content to the hosted Drex API. API usage draws from your account's prepaid credit; see [current pricing and credit terms](https://drex.nace.ai/terms) and the [privacy notice](https://drex.nace.ai/privacy).
 
