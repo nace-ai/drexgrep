@@ -1,5 +1,4 @@
 import type { Ask, DrexClient, Verdict } from "../contracts.ts";
-import { openStore, type AnswerStore } from "./store.ts";
 
 export type FailureKind = "auth" | "token-limit" | "rate-limit" | "cancelled" | "provider";
 
@@ -16,19 +15,18 @@ export class DrexFailure extends Error {
 
 export type OpenDrexOptions = {
   key: string;
-  remember?: boolean;
   /** peak parallel HTTP calls (default 64) */
   width?: number | undefined;
   /** optional fetch override for local checks */
   transport?: typeof globalThis.fetch;
   deadlineMs?: number;
-  store?: AnswerStore;
 };
 
 type QuestionBody = { type: "noul"; instructions: string };
 
 const TOKEN_LIMIT_RE = /token limit|too long|exceeds \d+ tokens/i;
-const FALLBACK_HOST = "https://drex.nace.ai/v1/systemone";
+export const DREX_ENDPOINT = "https://drex.nace.ai/v1/systemone";
+const DREX_MODEL = "drex-v1.1";
 const RATE_ATTEMPTS = 20;
 const TRANSIENT_RETRIES = 4;
 const DEFAULT_TIMEOUT_MS = 30_000;
@@ -36,20 +34,6 @@ const DEFAULT_CAP = 64;
 const DEFAULT_START = 8;
 const COOLDOWN_DEFAULT_MS = 1000;
 const CAUTION_STREAK_FACTOR = 16;
-
-function resolveEndpoint(): string {
-  const fromEnv = process.env.DREX_ENDPOINT;
-  return fromEnv && fromEnv.length > 0 ? fromEnv : FALLBACK_HOST;
-}
-
-function resolveModel(): string | null {
-  if (!Object.prototype.hasOwnProperty.call(process.env, "DREX_MODEL")) {
-    return "drex-latest";
-  }
-  const value = process.env.DREX_MODEL;
-  if (value === undefined || value === "") return null;
-  return value;
-}
 
 function startLimit(cap: number): number {
   const raw = process.env.DREX_CONCURRENCY;
@@ -259,22 +243,18 @@ export function openDrex(options: OpenDrexOptions): DrexClient {
   const slots = new AdaptiveSlots(startLimit(cap), cap);
   const doFetch = options.transport ?? fetch;
   const timeoutMs = options.deadlineMs ?? DEFAULT_TIMEOUT_MS;
-  const useCache = options.remember !== false;
-  const store = useCache ? (options.store ?? openStore()) : null;
-  const endpoint = resolveEndpoint();
+  const endpoint = DREX_ENDPOINT;
 
   let calls = 0;
   let retries = 0;
   let asked = 0;
-  let reused = 0;
 
   async function postOnce(state: unknown, asks: Ask[], stop: AbortSignal): Promise<Verdict[]> {
-    const model = resolveModel();
     const body: Record<string, unknown> = {
+      model: DREX_MODEL,
       state,
       questions: buildQuestionMap(asks),
     };
-    if (model !== null) body.model = model;
 
     const headers: Record<string, string> = {
       authorization: `Bearer ${key}`,
@@ -372,29 +352,13 @@ export function openDrex(options: OpenDrexOptions): DrexClient {
     get asked() {
       return asked;
     },
-    get reused() {
-      return reused;
-    },
     async ask(state, questionList, signal) {
       if (signal.aborted) throw new DrexFailure("cancelled", "aborted");
       if (questionList.length === 0) return [];
 
-      const model = resolveModel();
-      if (store) {
-        const hit = await store.get(endpoint, model, state, questionList);
-        if (hit) {
-          reused += hit.length;
-          return hit;
-        }
-      }
-
       const ticket = await slots.take(signal);
       try {
-        const verdicts = await postWithRetries(state, questionList, signal, ticket.saturated);
-        if (store) {
-          await store.put(endpoint, model, state, questionList, verdicts);
-        }
-        return verdicts;
+        return await postWithRetries(state, questionList, signal, ticket.saturated);
       } finally {
         ticket.release();
       }

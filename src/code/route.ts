@@ -9,12 +9,18 @@ import { segmenter } from "../segment/choose.ts";
 import { defsOf, findDefs } from "./defs.ts";
 import { grepNames } from "./grep.ts";
 import { kindOf, kindWeight } from "./kind.ts";
-import { linksFrom, siblingOverrides } from "./links.ts";
+import { callSites, familyLinks, headerImports, linksFrom, nameUses, ownFunctions, siblingOverrides } from "./links.ts";
 import { scoreFiles } from "./score.ts";
 import type { CodeName, DefEntry, GrepHit, LinkTarget, Scored } from "./types.ts";
 
 const NAME_KEEP = 0.4;
-const TRIAGE_KEEP = 10;
+const TRIAGE_KEEP = 12;
+const SCORE_KEEP = 30;
+const DREX_SHARE = 0.75;
+const LINK_PLACE = 3;
+const FLOOR_TOP = 0;
+const FLOOR_AT = 4;
+const LIST_CAP = 15;
 const DECL_CAP = 12;
 const SEG_BYTES = 12_000;
 const LINE_BYTES = 200;
@@ -24,6 +30,11 @@ const CHOSEN_MIN = 0.5;
 const HOPS = 2;
 const HOP_FILES = 8;
 const AMBIGUOUS_DEFS = 4;
+const RARE_DEFS = 2;
+const LOOSE_IMPORT = 0;
+const CALLER_FILES = 2;
+const CALLER_SPREAD = 3;
+const REASON_WEIGHT: Record<LinkTarget["reason"], number> = { import: 3, sibling: 2, call: 2, base: 2, caller: 1 };
 const LINK_TRIAGE = 0.5;
 const SURVEY_VISITS = 60;
 const DEF_PREVIEW = 60;
@@ -32,14 +43,18 @@ const SOURCE_EXT = /\.(py|pyx|pyi|js|jsx|ts|tsx|mjs|cjs|c|h|cc|cpp|hpp|rs|go|jav
 const BACK_DIRS = /^(docs?|tests?|testing|examples?|\.github|benchmarks?|asv_bench|ci|tools?)(\/|$)/i;
 
 export function sourceShare(docs: Doc[]): number {
-  if (docs.length === 0) return 0;
+  const front = docs.filter((d) => !BACK_DIRS.test(d.rel));
+  if (front.length === 0) return 0;
   let n = 0;
-  for (const doc of docs) if (SOURCE_EXT.test(doc.rel)) n++;
-  return n / docs.length;
+  for (const doc of front) if (SOURCE_EXT.test(doc.rel)) n++;
+  return n / front.length;
 }
 
 const PLAIN_SKIP: ReadonlySet<string> = new Set(
-  "this that with from when have does work works working good bad should would could about there their which what shows".split(" "),
+  [
+    "this that with from when have does work works working good bad should would could about there their which what shows",
+    "value values using return error issue example expected output result version",
+  ].join(" ").split(" "),
 );
 const PLAIN_CAP = 12;
 
@@ -52,7 +67,7 @@ export async function definedWords(question: string, dir: string, docs: Doc[], s
   return words
     .filter((w) => defined.has(w))
     .slice(0, PLAIN_CAP)
-    .map((w) => ({ text: w, parts: [w], origin: "ident" as const }));
+    .map((w) => ({ text: w, parts: [w], origin: "plain" as const }));
 }
 
 type Built = { state: unknown; asks: Ask[] };
@@ -277,10 +292,18 @@ async function linkTargets(
   judged: Set<string>,
   stop: AbortSignal,
 ): Promise<Map<string, number[]>> {
+  const docsByPath = new Map(docs.map((d) => [d.rel, d]));
   const called = linksFrom(chosen, new Map());
+  const core = chosen.filter((seg) => {
+    const doc = docsByPath.get(seg.rel);
+    return doc !== undefined && kindOf(doc) === "source";
+  });
+  const uses = nameUses(core);
+  const funcs = ownFunctions(core);
   const methods: Set<string> = new Set();
   for (const seg of chosen) methods.add(seg.title);
-  const defs = await findDefs(dir, docs, [...new Set([...called, ...methods])], stop);
+  const asked = [...new Set([...called, ...methods, ...uses.constants, ...uses.attrs, ...funcs.keys()])];
+  const defs = await findDefs(dir, docs, asked, stop);
 
   const byName = new Map<string, Set<string>>();
   for (const d of defs) {
@@ -291,23 +314,43 @@ async function linkTargets(
   const chosenRels = new Set(chosen.map((s) => s.rel));
   const ownDefs = docs.filter((d) => chosenRels.has(d.rel)).flatMap(defsOf);
   const targets: LinkTarget[] = siblingOverrides(chosen, ownDefs.concat(defs));
+  const imports = headerImports(core, docsByPath);
+  targets.push(...imports.used, ...familyLinks(core, docsByPath));
   const calledSet = new Set(called);
+  const usedSet = new Set([...uses.constants, ...uses.attrs]);
   for (const d of defs) {
-    if (!calledSet.has(d.name) || d.form === "assign") continue;
+    const call = calledSet.has(d.name) && d.form !== "assign";
+    if (!call && !usedSet.has(d.name)) continue;
     if ((byName.get(d.name)?.size ?? 0) > AMBIGUOUS_DEFS) continue;
     targets.push({ rel: d.rel, name: d.name, line: d.line, reason: "call" });
   }
 
-  const docsByPath = new Map(docs.map((d) => [d.rel, d]));
+  const rare = [...funcs].filter(([name]) => (byName.get(name)?.size ?? 0) <= RARE_DEFS);
+  if (rare.length > 0) {
+    const sites = await grepNames(dir, docs, rare.map(([name]) => name), stop);
+    for (const [name, home] of rare) {
+      const callers = sites
+        .filter((h) => h.rel !== home && h.names.has(name) && docsByPath.has(h.rel))
+        .map((h) => ({ rel: h.rel, lines: callSites(docsByPath.get(h.rel)!, name, h.names.get(name)!) }))
+        .filter((c) => c.lines.length > 0);
+      if (callers.length > CALLER_SPREAD) continue;
+      callers
+        .sort((x, y) => kindWeight(kindOf(docsByPath.get(y.rel)!)) - kindWeight(kindOf(docsByPath.get(x.rel)!)))
+        .slice(0, CALLER_FILES)
+        .forEach((c) => targets.push({ rel: c.rel, name, line: c.lines[0]!, reason: "caller" }));
+    }
+  }
+
   const weight = (t: LinkTarget) => {
     const doc = docsByPath.get(t.rel);
     const kind = doc ? kindWeight(kindOf(doc)) : 0;
-    return kind * (t.reason === "sibling" ? 2 : 1);
+    return kind * REASON_WEIGHT[t.reason];
   };
   const byRel = new Map<string, { lines: number[]; score: number }>();
-  for (const t of targets) {
+  const loose = new Set(imports.loose);
+  for (const t of [...targets, ...imports.loose]) {
     if (judged.has(t.rel)) continue;
-    const w = weight(t);
+    const w = weight(t) * (loose.has(t) ? LOOSE_IMPORT : 1);
     if (w <= 0.1) continue;
     const row = byRel.get(t.rel) ?? { lines: [], score: 0 };
     row.lines.push(t.line);
@@ -342,7 +385,7 @@ function heuristicRanking(scored: Scored[], docsByPath: Map<string, Doc>, topK: 
   }));
   return {
     hits: hits.slice(0, topK),
-    also: hits.slice(topK).map((h) => ({ rel: h.rel, rank: h.rank })),
+    also: hits.slice(topK, LIST_CAP).map((h) => ({ rel: h.rel, rank: h.rank })),
   };
 }
 
@@ -381,7 +424,7 @@ export async function codeRoute(args: {
     if (names.size > 0) keptHits.push({ rel: hit.rel, names });
   }
 
-  let scored = scoreFiles({ hits: keptHits, names: kept, defsByRel, docsByPath, total: docs.length });
+  let scored = scoreFiles({ hits: keptHits, names: kept, defsByRel, docsByPath, total: docs.length, keep: SCORE_KEEP });
   if (ablate) return { ranked: heuristicRanking(scored, docsByPath, topK), hits: [], problems: bags };
 
   if (scored.length === 0) {
@@ -406,7 +449,7 @@ export async function codeRoute(args: {
         return { rel: p.rel, heuristic: p.weight * kindWeight(kind), kind, defines: [], windows: [] };
       })
       .sort((x, y) => y.heuristic - x.heuristic)
-      .slice(0, 25);
+      .slice(0, SCORE_KEEP);
   }
   if (scored.length === 0) return { ranked: { hits: [], also: [] }, hits: [], problems: bags };
 
@@ -423,7 +466,6 @@ export async function codeRoute(args: {
     weight: triage.get(s.rel) ?? 0,
     via: "grep",
   }));
-  const judged = new Set(picks.map((p) => p.rel));
   const first = await judge({
     client,
     docsByPath,
@@ -437,6 +479,7 @@ export async function codeRoute(args: {
   });
   bags.push(first.problems);
   let found = first.hits;
+  const judged = new Set(found.map((h) => h.rel));
 
   let frontier = first.hits;
   for (let hop = 0; hop < HOPS; hop++) {
@@ -476,20 +519,36 @@ export async function codeRoute(args: {
     const doc = docsByPath.get(hit.rel);
     if (doc) kinds.set(hit.rel, kindWeight(kindOf(doc)));
   }
-  const ranked = rankCode({ hits: found, triage, kindWeight: kinds, topK });
-  const listed = new Set([...ranked.hits, ...ranked.also].map((h) => h.rel));
-  if (ranked.hits.length < topK) {
-    for (const s of top) {
-      if (ranked.hits.length >= topK) break;
-      if (listed.has(s.rel)) continue;
-      listed.add(s.rel);
-      ranked.hits.push({ rel: s.rel, sha: docsByPath.get(s.rel)!.sha, rank: 0, via: "grep", sections: [], quotes: [] });
-    }
+  const judgedRank = rankCode({ hits: found, triage, kindWeight: kinds, topK: found.length });
+  return { ranked: fuse(judgedRank.hits, scored, docsByPath, topK), hits: found, problems: bags };
+}
+
+function fuse(judgedHits: Hit[], scored: Scored[], docsByPath: Map<string, Doc>, topK: number): RankResult {
+  const place = new Map<string, number>();
+  scored.forEach((s, at) => place.set(s.rel, at));
+  const rows = new Map<string, { hit: Hit; value: number }>();
+  const lean = (rel: string) => {
+    const at = place.get(rel);
+    return 1 / (1 + (at ?? LINK_PLACE));
+  };
+  for (const hit of judgedHits) {
+    rows.set(hit.rel, { hit, value: DREX_SHARE * hit.rank + (1 - DREX_SHARE) * lean(hit.rel) });
   }
-  for (const s of top) {
-    if (listed.has(s.rel)) continue;
-    listed.add(s.rel);
-    ranked.also.push({ rel: s.rel, rank: 0 });
+  for (const s of scored) {
+    if (rows.has(s.rel) || s.heuristic <= 0) continue;
+    const hit: Hit = { rel: s.rel, sha: docsByPath.get(s.rel)?.sha ?? "", rank: 0, via: "grep", sections: [], quotes: [] };
+    rows.set(s.rel, { hit, value: (1 - DREX_SHARE) * lean(s.rel) });
   }
-  return { ranked, hits: found, problems: bags };
+  const order = [...rows.values()].sort((x, y) => y.value - x.value || (x.hit.rel < y.hit.rel ? -1 : 1));
+  for (const s of scored.slice(0, FLOOR_TOP)) {
+    const at = order.findIndex((row) => row.hit.rel === s.rel);
+    if (at <= FLOOR_AT) continue;
+    const [row] = order.splice(at, 1);
+    order.splice(FLOOR_AT, 0, row!);
+  }
+  const shaped = order.slice(0, LIST_CAP).map((row) => ({ ...row.hit, rank: row.value }));
+  return {
+    hits: shaped.slice(0, topK),
+    also: shaped.slice(topK).map((h) => ({ rel: h.rel, rank: h.rank })),
+  };
 }

@@ -8,6 +8,7 @@ const REACH = 2;
 const DEFINES_BOOST = 3;
 const MODULE_BOOST = 2;
 const STEM_BOOST = 1.5;
+const PLAIN_SHARE = 0.5;
 
 export function rarity(hits: GrepHit[], total: number): Map<string, number> {
   const df = new Map<string, number>();
@@ -63,6 +64,10 @@ export function scoreFiles(args: {
 }): Scored[] {
   const idf = rarity(args.hits, args.total);
   const modules = modulePaths(args.names);
+  const coded = new Set(args.names.filter((n) => n.origin !== "plain").flatMap((n) => n.parts));
+  const plainOnly = new Set(
+    args.names.filter((n) => n.origin === "plain").flatMap((n) => n.parts).filter((p) => !coded.has(p)),
+  );
   const stems: Set<string> = new Set();
   for (const name of args.names) for (const part of name.parts) stems.add(part.split(".").pop()!.toLowerCase());
 
@@ -77,7 +82,7 @@ export function scoreFiles(args: {
     const defines: string[] = [];
     let raw = 0;
     for (const part of hit.names.keys()) {
-      let gain = idf.get(part) ?? 0;
+      let gain = (idf.get(part) ?? 0) * (plainOnly.has(part) ? PLAIN_SHARE : 1);
       if (definesPart(defs, part)) {
         gain *= DEFINES_BOOST;
         defines.push(part);

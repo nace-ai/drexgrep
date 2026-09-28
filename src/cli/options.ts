@@ -8,15 +8,12 @@ export type SearchFlags = {
   topK: number;
   thorough: boolean;
   mode: SearchMode;
-  skipCache: boolean;
   parallel?: number;
 };
 
 export type ParsedCli =
   | { action: "help" }
   | { action: "version" }
-  | { action: "doctor" }
-  | { action: "cache-clear" }
   | SearchFlags;
 
 const DEFAULT_TOP = 6;
@@ -35,7 +32,6 @@ export function parseArgv(argv: string[]): ParsedCli {
     topK: DEFAULT_TOP,
     thorough: false,
     mode: "auto" as SearchMode,
-    skipCache: false,
     parallel: undefined as number | undefined,
     help: false,
     version: false,
@@ -62,10 +58,6 @@ export function parseArgv(argv: string[]): ParsedCli {
     }
     if (token === "--thorough") {
       flags.thorough = true;
-      continue;
-    }
-    if (token === "--no-cache") {
-      flags.skipCache = true;
       continue;
     }
     if (token === "--top" || token.startsWith("--top=")) {
@@ -103,16 +95,6 @@ export function parseArgv(argv: string[]): ParsedCli {
   if (flags.version) return { action: "version" };
 
   const head = positionals[0];
-  if (head === "doctor") {
-    if (positionals.length > 1) throw new Error("doctor takes no arguments");
-    return { action: "doctor" };
-  }
-  if (head === "cache") {
-    if (positionals[1] !== "clear" || positionals.length !== 2) {
-      throw new Error("usage: dg cache clear");
-    }
-    return { action: "cache-clear" };
-  }
   if (!head?.trim()) {
     throw new Error('usage: dg "question" [root]');
   }
@@ -131,7 +113,6 @@ export function parseArgv(argv: string[]): ParsedCli {
     topK: flags.topK,
     thorough: flags.thorough,
     mode: flags.mode,
-    skipCache: flags.skipCache,
     ...(flags.parallel === undefined ? {} : { parallel: flags.parallel }),
   };
 }
@@ -140,8 +121,6 @@ export const USAGE = `dg — ask a question over a local tree
 
 Usage:
   dg "question" [root]
-  dg doctor
-  dg cache clear
 
 Root defaults to the current working directory.
 
@@ -150,7 +129,6 @@ Flags:
   --top N          keep N ranked files (default ${DEFAULT_TOP})
   --thorough       ask the pipeline for a deeper pass
   --mode M         route: auto, code or docs (default auto)
-  --no-cache       set DREXGREP_NO_CACHE=1 for this run
   --concurrency N  set DREX_CONCURRENCY for this run
   --help, -h       show this text
   --version        print package version

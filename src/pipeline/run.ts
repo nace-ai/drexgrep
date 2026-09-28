@@ -30,7 +30,7 @@ function emptyReport(
     hits: [],
     also: [],
     problems: {},
-    tally: { calls: 0, retries: 0, asked: 0, reused: 0, docsRead: 0 },
+    tally: { calls: 0, retries: 0, asked: 0, docsRead: 0 },
   };
 }
 
@@ -82,15 +82,23 @@ function pathIndex(docs: Doc[]): Map<string, Doc> {
   return map;
 }
 
-const CODE_SHARE = 0.4;
+const CODE_SHARE = 0.15;
+const NAME_CAP = 40;
 
 async function pickRoute(input: SearchArgs, dir: string, docs: Doc[]): Promise<CodeName[] | null> {
   const mode = input.mode ?? "auto";
   if (mode === "docs") return null;
-  if (mode === "auto" && sourceShare(docs) < CODE_SHARE) return null;
+  const ablate = process.env.DREXGREP_ABLATE === "heuristic";
+  if (mode === "auto" && !ablate && sourceShare(docs) < CODE_SHARE) return null;
   const names = codeNames(input.question);
-  if (names.length === 0) names.push(...(await definedWords(input.question, dir, docs, input.cancel)));
-  if (mode === "auto" && names.length === 0) return null;
+  const seen = new Set(names.flatMap((n) => n.parts.map((p) => p.toLowerCase())));
+  for (const word of await definedWords(input.question, dir, docs, input.cancel)) {
+    if (names.length >= NAME_CAP) break;
+    if (seen.has(word.text)) continue;
+    seen.add(word.text);
+    names.push(word);
+  }
+  if (mode === "auto" && !ablate && names.length === 0) return null;
   return names;
 }
 
@@ -100,8 +108,9 @@ export async function search(input: SearchArgs): Promise<Report> {
     return emptyReport(input.dir, input.question, "cancelled");
   }
 
-  const key = process.env.DREX_API_KEY;
-  if (!key || !key.trim()) throw new Error("Set DREX_API_KEY.");
+  const ablate = process.env.DREXGREP_ABLATE === "heuristic";
+  const key = process.env.DREX_API_KEY?.trim() || (ablate ? "unused" : "");
+  if (!key) throw new Error("Set DREX_API_KEY.");
 
   const corpus = await openCorpus(input.dir, { cancel: halt });
   const docs = await corpus.docs();
@@ -109,7 +118,6 @@ export async function search(input: SearchArgs): Promise<Report> {
 
   const client = openDrex({
     key,
-    remember: process.env.DREXGREP_NO_CACHE !== "1",
     width: Number(process.env.DREX_CONCURRENCY || 16),
   });
 
@@ -161,7 +169,6 @@ export async function search(input: SearchArgs): Promise<Report> {
     calls: client.calls,
     retries: client.retries,
     asked: client.asked,
-    reused: client.reused,
     docsRead: docs.length,
   });
 

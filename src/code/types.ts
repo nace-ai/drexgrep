@@ -1,6 +1,6 @@
 import type { Doc, LineSpan, Segment } from "../contracts.ts";
 
-export type NameOrigin = "backtick" | "dotted" | "ident" | "traceback" | "error" | "flag";
+export type NameOrigin = "backtick" | "dotted" | "ident" | "traceback" | "error" | "flag" | "plain";
 
 export type CodeName = {
   text: string; // as written, e.g. "DataArray.quantile"
@@ -39,7 +39,7 @@ export type LinkTarget = {
   rel: string;
   name: string;
   line: number;
-  reason: "call" | "import" | "base" | "sibling";
+  reason: "call" | "import" | "base" | "sibling" | "caller";
 };
 
 export type NamesApi = (question: string) => CodeName[];

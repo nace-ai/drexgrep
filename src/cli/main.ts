@@ -13,10 +13,6 @@ function writeErr(text: string): void {
   writeSync(2, text.endsWith("\n") ? text : `${text}\n`);
 }
 
-type StoreHandle = {
-  clear(): void | Promise<void>;
-};
-
 function packageVersion(): string {
   const entry = process.argv[1] ? resolve(process.argv[1]) : process.cwd();
   const base = dirname(entry);
@@ -40,7 +36,6 @@ function requireApiKey(): void {
 }
 
 function applyRunEnv(flags: SearchFlags): void {
-  if (flags.skipCache) process.env.DREXGREP_NO_CACHE = "1";
   if (flags.parallel !== undefined) {
     process.env.DREX_CONCURRENCY = String(flags.parallel);
   }
@@ -58,50 +53,8 @@ function exitFor(outcome: Report["outcome"]): number {
   return 130;
 }
 
-async function runDoctor(): Promise<number> {
-  requireApiKey();
-  try {
-    const { openDrex } = await import("../drex/client");
-    const endpoint =
-      process.env.DREX_ENDPOINT && process.env.DREX_ENDPOINT.length > 0
-        ? process.env.DREX_ENDPOINT
-        : "https://drex.nace.ai/v1/systemone";
-    const drex = openDrex({
-      key: process.env.DREX_API_KEY!,
-      remember: false,
-    });
-    await drex.ask(
-      "ping",
-      [{ tag: "ping", prompt: "Is this a ping?" }],
-      AbortSignal.timeout(30_000),
-    );
-    writeOut(`drex ok (${endpoint})`);
-    return 0;
-  } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    writeOut(`drex unavailable: ${message}`);
-    return 1;
-  }
-}
-
-async function runCacheClear(): Promise<number> {
-  const mod = (await import("../drex/store")) as {
-    openStore?: () => StoreHandle;
-  };
-  if (typeof mod.openStore === "function") {
-    await mod.openStore().clear();
-  } else {
-    const dir = process.env.DREXGREP_CACHE_DIR;
-    if (!dir) throw new Error("openStore is not wired yet");
-    const fs = await import("node:fs/promises");
-    await fs.rm(dir, { force: true, recursive: true });
-  }
-  writeOut("cache cleared");
-  return 0;
-}
-
 async function runSearch(flags: SearchFlags): Promise<number> {
-  requireApiKey();
+  if (process.env.DREXGREP_ABLATE !== "heuristic") requireApiKey();
   applyRunEnv(flags);
 
   const halt = new AbortController();
@@ -148,8 +101,6 @@ async function launch(): Promise<number> {
     writeOut(packageVersion());
     return 0;
   }
-  if (parsed.action === "doctor") return runDoctor();
-  if (parsed.action === "cache-clear") return runCacheClear();
   return runSearch(parsed);
 }
 

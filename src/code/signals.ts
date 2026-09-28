@@ -9,6 +9,7 @@ const RANK: Record<NameOrigin, number> = {
   dotted: 3,
   ident: 4,
   flag: 5,
+  plain: 6,
 };
 
 const STOP: ReadonlySet<string> = new Set([

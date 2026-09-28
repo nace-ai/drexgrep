@@ -51,7 +51,6 @@ export type Tally = {
   calls: number;
   retries: number;
   asked: number;
-  reused: number;
   docsRead: number;
 };
 
@@ -74,7 +73,6 @@ export interface DrexClient {
   readonly calls: number; // successful HTTP 200 calls
   readonly retries: number; // 429 and transient retries
   readonly asked: number;
-  readonly reused: number; // verdicts served from the local store
 }
 
 export interface Corpus {
