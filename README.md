@@ -115,6 +115,7 @@ Text by default. `--json` emits:
 
 ```bash
 npm run check-types
+npm test
 npm run build
 node dist/index.js "question" path/to/root
 ```
