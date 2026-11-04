@@ -1,4 +1,5 @@
 import type { Ask, DrexClient, Verdict } from "../contracts.ts";
+import { CLIENT_ID } from "../version.ts";
 
 export type FailureKind = "auth" | "token-limit" | "rate-limit" | "cancelled" | "provider";
 
@@ -259,6 +260,8 @@ export function openDrex(options: OpenDrexOptions): DrexClient {
     const headers: Record<string, string> = {
       authorization: `Bearer ${key}`,
       "content-type": "application/json",
+      "x-nace-client": CLIENT_ID,
+      "user-agent": CLIENT_ID,
     };
 
     const timeout = AbortSignal.timeout(timeoutMs);

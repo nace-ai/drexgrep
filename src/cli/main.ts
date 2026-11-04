@@ -1,8 +1,8 @@
-import { readFileSync, writeSync } from "node:fs";
-import { dirname, join, resolve } from "node:path";
+import { writeSync } from "node:fs";
 import type { Report } from "../contracts";
 import { search } from "../pipeline/run";
 import { renderJson, renderText } from "../report/emit";
+import { PACKAGE_VERSION } from "../version";
 import { USAGE, parseArgv, type SearchFlags } from "./options";
 
 function writeOut(text: string): void {
@@ -11,22 +11,6 @@ function writeOut(text: string): void {
 
 function writeErr(text: string): void {
   writeSync(2, text.endsWith("\n") ? text : `${text}\n`);
-}
-
-function packageVersion(): string {
-  const entry = process.argv[1] ? resolve(process.argv[1]) : process.cwd();
-  const base = dirname(entry);
-  for (const rel of ["../package.json", "package.json", "../../package.json"]) {
-    try {
-      const parsed = JSON.parse(readFileSync(join(base, rel), "utf8")) as {
-        version?: string;
-      };
-      if (parsed.version) return parsed.version;
-    } catch {
-      // try next candidate
-    }
-  }
-  return "0.0.0";
 }
 
 function requireApiKey(): void {
@@ -98,7 +82,7 @@ async function launch(): Promise<number> {
     return 0;
   }
   if (parsed.action === "version") {
-    writeOut(packageVersion());
+    writeOut(PACKAGE_VERSION);
     return 0;
   }
   return runSearch(parsed);
