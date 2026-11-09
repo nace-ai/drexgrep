@@ -14,6 +14,8 @@
   <a href="#output">Output</a>
 </p>
 
+**New: [Drex Browser Use](https://github.com/nace-ai/drex-browser-harness-pub).** Say what you want done in a browser, and Drex Max takes the actions. One sentence filled a DoorDash cart in 16 moves, 66 seconds and $0.006 of model cost. It runs as an MCP server and CLI for Claude Code, Codex and Cursor, and as a Chrome side panel.
+
 ---
 
 Give `dg` a bug report or a "where is this implemented?" question, and it returns a short ranked list of files with the exact lines that earned each rank. Your coding agent starts reading in the right place instead of scanning the whole tree.
